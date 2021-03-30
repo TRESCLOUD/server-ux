@@ -3,13 +3,19 @@
 
 from ast import literal_eval
 
+from lxml import etree
+
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
+from odoo.osv import expression
 
 
 class TierValidation(models.AbstractModel):
     _name = "tier.validation"
     _description = "Tier Validation (abstract)"
+
+    _tier_validation_buttons_xpath = "/form/header/button[last()]"
+    _tier_validation_manual_config = True
 
     _state_field = "state"
     _state_from = ["draft"]
@@ -38,7 +44,9 @@ class TierValidation(models.AbstractModel):
         compute="_compute_reviewer_ids",
         search="_search_reviewer_ids",
     )
-    can_review = fields.Boolean(compute="_compute_can_review")
+    can_review = fields.Boolean(
+        compute="_compute_can_review", search="_search_can_review"
+    )
     has_comment = fields.Boolean(compute="_compute_has_comment")
 
     def _compute_has_comment(self):
@@ -67,6 +75,22 @@ class TierValidation(models.AbstractModel):
     def _compute_can_review(self):
         for rec in self:
             rec.can_review = rec._get_sequences_to_approve(self.env.user)
+
+    @api.model
+    def _search_can_review(self, operator, value):
+        res_ids = (
+            self.search(
+                [
+                    ("review_ids.reviewer_ids", "=", self.env.user.id),
+                    ("review_ids.status", "=", "pending"),
+                    ("review_ids.can_review", "=", True),
+                    ("rejected", "=", False),
+                ]
+            )
+            .filtered("can_review")
+            .ids
+        )
+        return [("id", "in", res_ids)]
 
     @api.depends("review_ids")
     def _compute_reviewer_ids(self):
@@ -139,12 +163,12 @@ class TierValidation(models.AbstractModel):
         domain = []
         if tier.definition_domain:
             domain = literal_eval(tier.definition_domain)
-        return self.search([("id", "=", self.id)] + domain)
+        return self.search(expression.AND([[("id", "=", self.id)], domain]))
 
     @api.model
     def _get_under_validation_exceptions(self):
         """Extend for more field exceptions."""
-        return ["message_follower_ids"]
+        return ["message_follower_ids", "access_token"]
 
     def _check_allow_write_under_validation(self, vals):
         """Allow to add exceptions for fields that are allowed to be written
@@ -372,3 +396,48 @@ class TierValidation(models.AbstractModel):
     def unlink(self):
         self.mapped("review_ids").unlink()
         return super().unlink()
+
+    @api.model
+    def fields_view_get(
+        self, view_id=None, view_type="form", toolbar=False, submenu=False
+    ):
+        res = super().fields_view_get(
+            view_id=view_id, view_type=view_type, toolbar=toolbar, submenu=submenu
+        )
+        if view_type == "form" and not self._tier_validation_manual_config:
+            doc = etree.XML(res["arch"])
+            params = {
+                "state_field": self._state_field,
+                "state_from": ",".join("'%s'" % state for state in self._state_from),
+            }
+            for node in doc.xpath(self._tier_validation_buttons_xpath):
+                # By default, after the last button of the header
+                str_element = self.env["ir.qweb"]._render(
+                    "base_tier_validation.tier_validation_buttons", params
+                )
+                new_node = etree.fromstring(str_element)
+                for new_element in new_node:
+                    node.addnext(new_element)
+            for node in doc.xpath("/form/sheet"):
+                str_element = self.env["ir.qweb"]._render(
+                    "base_tier_validation.tier_validation_label", params
+                )
+                new_node = etree.fromstring(str_element)
+                for new_element in new_node:
+                    node.addprevious(new_element)
+                str_element = self.env["ir.qweb"]._render(
+                    "base_tier_validation.tier_validation_reviews", params
+                )
+                node.addnext(etree.fromstring(str_element))
+            View = self.env["ir.ui.view"]
+
+            # Override context for postprocessing
+            if view_id and res.get("base_model", self._name) != self._name:
+                View = View.with_context(base_model_name=res["base_model"])
+            new_arch, new_fields = View.postprocess_and_fields(doc, self._name)
+            res["arch"] = new_arch
+            # We don't want to loose previous configuration, so, we only want to add
+            # the new fields
+            new_fields.update(res["fields"])
+            res["fields"] = new_fields
+        return res
