@@ -48,6 +48,7 @@ class TierValidation(models.AbstractModel):
         compute="_compute_can_review", search="_search_can_review"
     )
     has_comment = fields.Boolean(compute="_compute_has_comment")
+    next_review = fields.Char(compute="_compute_next_review")
 
     def _compute_has_comment(self):
         for rec in self:
@@ -119,6 +120,12 @@ class TierValidation(models.AbstractModel):
 
     @api.model
     def _search_reviewer_ids(self, operator, value):
+        model_operator = "in"
+        if operator == "=" and value in ("[]", False):
+            # Search for records that have not yet been through a validation
+            # process.
+            operator = "!="
+            model_operator = "not in"
         reviews = self.env["tier.review"].search(
             [
                 ("model", "=", self._name),
@@ -127,12 +134,19 @@ class TierValidation(models.AbstractModel):
                 ("status", "=", "pending"),
             ]
         )
-        return [("id", "in", list(set(reviews.mapped("res_id"))))]
+        return [("id", model_operator, list(set(reviews.mapped("res_id"))))]
 
     def _compute_validated_rejected(self):
         for rec in self:
             rec.validated = self._calc_reviews_validated(rec.review_ids)
             rec.rejected = self._calc_reviews_rejected(rec.review_ids)
+
+    def _compute_next_review(self):
+        for rec in self:
+            review = rec.review_ids.sorted("sequence").filtered(
+                lambda l: l.status == "pending"
+            )[:1]
+            rec.next_review = review and _("Next: %s") % review.name or ""
 
     @api.model
     def _calc_reviews_validated(self, reviews):
@@ -205,7 +219,7 @@ class TierValidation(models.AbstractModel):
                 and getattr(rec, self._state_field) in self._state_from
                 and not vals.get(self._state_field)
                 in (self._state_to + [self._cancel_state])
-                and not self._check_allow_write_under_validation(vals)
+                and not rec._check_allow_write_under_validation(vals)
             ):
                 raise ValidationError(_("The operation is under validation."))
         if vals.get(self._state_field) in self._state_from:
@@ -236,17 +250,23 @@ class TierValidation(models.AbstractModel):
             rec = self.env[review.model].browse(review.res_id)
             rec._notify_accepted_reviews()
 
+    def _get_requested_notification_subtype(self):
+        return "base_tier_validation.mt_tier_validation_requested"
+
     def _get_accepted_notification_subtype(self):
         return "base_tier_validation.mt_tier_validation_accepted"
 
     def _get_rejected_notification_subtype(self):
         return "base_tier_validation.mt_tier_validation_rejected"
 
+    def _get_restarted_notification_subtype(self):
+        return "base_tier_validation.mt_tier_validation_restarted"
+
     def _notify_accepted_reviews(self):
         post = "message_post"
         if hasattr(self, post):
             # Notify state change
-            getattr(self, post)(
+            getattr(self.sudo(), post)(
                 subtype_xmlid=self._get_accepted_notification_subtype(),
                 body=self._notify_accepted_reviews_body(),
             )
@@ -311,7 +331,7 @@ class TierValidation(models.AbstractModel):
         post = "message_post"
         if hasattr(self, post):
             # Notify state change
-            getattr(self, post)(
+            getattr(self.sudo(), post)(
                 subtype_xmlid=self._get_rejected_notification_subtype(),
                 body=self._notify_rejected_review_body(),
             )
@@ -349,7 +369,7 @@ class TierValidation(models.AbstractModel):
                     partner_ids=users_to_notify.mapped("partner_id").ids
                 )
                 getattr(rec, post)(
-                    subtype_xmlid="mail.mt_comment",
+                    subtype_xmlid=self._get_requested_notification_subtype(),
                     body=rec._notify_requested_review_body(),
                 )
 
@@ -379,11 +399,23 @@ class TierValidation(models.AbstractModel):
         self._notify_review_requested(created_trs)
         return created_trs
 
+    def _notify_restarted_review_body(self):
+        return _("The review has been reset by %s.") % (self.env.user.name)
+
+    def _notify_restarted_review(self):
+        post = "message_post"
+        if hasattr(self, post):
+            getattr(self.sudo(), post)(
+                subtype_xmlid=self._get_restarted_notification_subtype(),
+                body=self._notify_restarted_review_body(),
+            )
+
     def restart_validation(self):
         for rec in self:
             if getattr(rec, self._state_field) in self._state_from:
                 rec.mapped("review_ids").unlink()
                 self._update_counter()
+            rec._notify_restarted_review()
 
     @api.model
     def _update_counter(self):
