@@ -27,13 +27,13 @@ addon | version | maintainers | summary
 [base_optional_quick_create](base_optional_quick_create/) | 14.0.1.0.0 |  | Avoid "quick create" on m2o fields, on a "by model" basis
 [base_revision](base_revision/) | 14.0.1.0.1 |  | Keep track of revised document
 [base_search_custom_field_filter](base_search_custom_field_filter/) | 14.0.1.0.0 | [![pedrobaeza](https://github.com/pedrobaeza.png?size=30px)](https://github.com/pedrobaeza) | Add custom filters for fields via UI
-[base_technical_features](base_technical_features/) | 14.0.1.1.0 |  | Access to technical features without activating debug mode
-[base_tier_validation](base_tier_validation/) | 14.0.2.6.0 | [![LoisRForgeFlow](https://github.com/LoisRForgeFlow.png?size=30px)](https://github.com/LoisRForgeFlow) | Implement a validation process based on tiers.
+[base_technical_features](base_technical_features/) | 14.0.1.1.1 |  | Access to technical features without activating debug mode
+[base_tier_validation](base_tier_validation/) | 14.0.2.7.0 | [![LoisRForgeFlow](https://github.com/LoisRForgeFlow.png?size=30px)](https://github.com/LoisRForgeFlow) | Implement a validation process based on tiers.
 [base_tier_validation_formula](base_tier_validation_formula/) | 14.0.2.0.1 |  | Formulas for Base tier validation
 [base_tier_validation_forward](base_tier_validation_forward/) | 14.0.1.0.2 | [![kittiu](https://github.com/kittiu.png?size=30px)](https://github.com/kittiu) | Forward option for base tiers
 [base_tier_validation_server_action](base_tier_validation_server_action/) | 14.0.1.1.1 | [![kittiu](https://github.com/kittiu.png?size=30px)](https://github.com/kittiu) | Add option to call server action when a tier is validated
 [chained_swapper](chained_swapper/) | 14.0.1.0.0 |  | Chained Swapper
-[date_range](date_range/) | 14.0.2.0.2 | [![lmignon](https://github.com/lmignon.png?size=30px)](https://github.com/lmignon) | Manage all kind of date range
+[date_range](date_range/) | 14.0.2.1.0 | [![lmignon](https://github.com/lmignon.png?size=30px)](https://github.com/lmignon) | Manage all kind of date range
 [default_multi_user](default_multi_user/) | 14.0.1.0.0 | [![LoisRForgeFlow](https://github.com/LoisRForgeFlow.png?size=30px)](https://github.com/LoisRForgeFlow) | Allows to share user-defined defaults among several users.
 [document_quick_access](document_quick_access/) | 14.0.1.0.0 | [![etobella](https://github.com/etobella.png?size=30px)](https://github.com/etobella) | Document quick access
 [document_quick_access_folder_auto_classification](document_quick_access_folder_auto_classification/) | 14.0.1.0.0 | [![etobella](https://github.com/etobella.png?size=30px)](https://github.com/etobella) | Auto classification of Documents after reading a QR
@@ -42,6 +42,7 @@ addon | version | maintainers | summary
 [mass_operation_abstract](mass_operation_abstract/) | 14.0.1.0.0 |  | Abstract Tools used for modules that realize operation on many items
 [multi_step_wizard](multi_step_wizard/) | 14.0.1.0.0 |  | Multi-Steps Wizards
 [sequence_check_digit](sequence_check_digit/) | 14.0.1.0.0 |  | Adds a check digit on sequences
+[sequence_range_end](sequence_range_end/) | 14.0.1.0.0 |  | Sequence prefix/suffix option, 'range_end_', to use the beginning of the range
 [sequence_reset_period](sequence_reset_period/) | 14.0.1.0.0 |  | Auto-generate yearly/monthly/weekly/daily sequence period ranges
 
 [//]: # (end addons)
