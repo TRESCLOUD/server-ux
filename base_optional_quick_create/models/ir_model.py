@@ -18,11 +18,14 @@ class IrModel(models.Model):
             def wrapper(self, name):
                 raise UserError(
                     _(
-                        "Can't create %s with name %s quickly.\n"
+                        f"Can't create %(model_name)s with name %(name)s quickly.\n"
                         "Please contact your system administrator to disable "
                         "this behaviour."
                     )
-                    % (self._name, name)
+                    % {
+                        "model_name":self._name, 
+                        "name":name
+                        }
                 )
 
             return wrapper
