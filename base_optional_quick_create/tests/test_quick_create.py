@@ -19,7 +19,7 @@ class TestQuickCreate(TransactionCase):
         self.partner_model.avoid_quick_create = True
         with self.assertRaises(UserError):
             self.env["res.partner"].name_create("TEST partner")
-            
+
         # Unsetting the flag, unpatches the method
         self.partner_model.avoid_quick_create = False
         partner_id = self.env["res.partner"].name_create("TEST partner")
