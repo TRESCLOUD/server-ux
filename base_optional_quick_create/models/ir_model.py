@@ -22,10 +22,7 @@ class IrModel(models.Model):
                         "Please contact your system administrator to disable "
                         "this behaviour."
                     )
-                    % {
-                        "model_name":self._name, 
-                        "name":name
-                        }
+                    % {"model_name": self._name, "name": name}
                 )
 
             return wrapper
