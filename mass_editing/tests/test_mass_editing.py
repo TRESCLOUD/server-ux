@@ -5,8 +5,11 @@
 
 from ast import literal_eval
 
-from odoo.exceptions import ValidationError
-from odoo.tests import Form, common
+import psycopg2
+
+from odoo.exceptions import UserError, ValidationError
+from odoo.tests import Form, common, new_test_user
+from odoo.tools.misc import mute_logger
 
 from odoo.addons.base.models.ir_actions import IrActionsServer
 
@@ -27,18 +30,28 @@ class TestMassEditing(common.TransactionCase):
 
         self.MassEditingWizard = self.env["mass.editing.wizard"]
         self.ResPartnerTitle = self.env["res.partner.title"]
+        self.ResPartner = self.env["res.partner"]
         self.ResLang = self.env["res.lang"]
         self.IrTranslation = self.env["ir.translation"]
         self.IrActionsActWindow = self.env["ir.actions.act_window"]
 
         self.mass_editing_user = self.env.ref("mass_editing.mass_editing_user")
+        self.mass_editing_partner = self.env.ref("mass_editing.mass_editing_partner")
         self.mass_editing_partner_title = self.env.ref(
             "mass_editing.mass_editing_partner_title"
         )
-
-        self.users = self.env["res.users"].search([])
-        self.user = self.env.ref("base.user_demo")
+        user_admin = self.env.ref("base.user_admin")
+        user_demo = self.env.ref("base.user_demo")
+        self.users = self.env["res.users"].search(
+            [("id", "not in", (user_admin.id, user_demo.id))]
+        )
+        self.user = new_test_user(
+            self.env,
+            login="test-mass_editing-user",
+            groups="base.group_system",
+        )
         self.partner_title = self._create_partner_title()
+        self.invoice_partner = self._create_invoice_partner()
 
     def _create_partner_title(self):
         """Create a Partner Title."""
@@ -53,6 +66,14 @@ class TestMassEditing(common.TransactionCase):
             {"name": "Botschafter", "shortcut": "Bots."}
         )
         return partner_title
+
+    def _create_invoice_partner(self):
+        invoice_partner = self.ResPartner.create(
+            {
+                "type": "invoice",
+            }
+        )
+        return invoice_partner
 
     def _create_wizard_and_apply_values(self, server_action, items, vals):
         action = server_action.with_context(
@@ -356,3 +377,37 @@ class TestMassEditing(common.TransactionCase):
             result,
             None,
         )
+
+    def test_mass_edit_partner_user_error(self):
+        vals = {
+            "selection__parent_id": "set",
+            "parent_id": self.invoice_partner.id,
+            "write_record_by_record": True,
+        }
+        action = self.mass_editing_partner.with_context(
+            active_model=self.invoice_partner._name,
+            active_ids=self.invoice_partner.ids,
+        ).run()
+        try:
+            self.env[action["res_model"]].with_context(
+                **literal_eval(action["context"]),
+            ).create(vals)
+        except Exception as e:
+            self.assertEqual(type(e), UserError)
+
+    def test_mass_edit_partner_sql_error(self):
+        vals = {
+            "selection__type": "set",
+            "type": "contact",
+            "write_record_by_record": True,
+            "selection__name": "remove",
+        }
+        action = self.mass_editing_partner.with_context(
+            active_model=self.invoice_partner._name,
+            active_ids=self.invoice_partner.ids,
+        ).run()
+        with self.assertRaises(psycopg2.IntegrityError):
+            with mute_logger("odoo.sql_db"), self.cr.savepoint():
+                self.env[action["res_model"]].with_context(
+                    **literal_eval(action["context"]),
+                ).create(vals)
