@@ -902,7 +902,7 @@ class TierTierValidation(CommonTierValidation):
             )
         self.assertEqual(self.test_record.test_validation_field, 4)
 
-    def test_27_reevaluate_validation(self):
+    def test_26_reevaluate_validation(self):
         # Create new test record
         test_record = self.test_model.create(
             {"test_field": 100, "test_validation_field": 15}
@@ -946,7 +946,7 @@ class TierTierValidation(CommonTierValidation):
         self.assertEqual(len(test_record.review_ids), 2)
         self.assertIn(old_review, test_record.review_ids)
 
-    def test_28_reevaluate_validation(self):
+    def test_27_reevaluate_validation(self):
         # Create new test record
         test_record = self.test_model.create(
             {"test_field": 100, "test_validation_field": 15}
@@ -993,6 +993,215 @@ class TierTierValidation(CommonTierValidation):
         self.assertEqual(len(reviews), 1)
         self.assertEqual(len(test_record.review_ids), 2)
         self.assertIn(old_review, test_record.review_ids)
+
+    def test_28_request_validation_diff_company(self):
+        """
+        Test validation request behavior with multi-company setup.
+
+        Setup:
+        - Main company has 2 tier definitions:
+          - One for User1 (sequence 30)
+          - One for User3 (sequence 20)
+        - Other company has 1 tier definition:
+          - One for User3 (sequence 30)
+
+        When record's company is set to 'other company':
+        - Only User3's tier definition from other company should be applied
+        - Should create only 1 review
+        """
+        self.assertFalse(self.test_record_2.review_ids)
+        self.assertFalse(self.test_record_2.company_id)
+        self.assertEqual(self.test_user_3_multi_company.env.company, self.main_company)
+
+        self.test_record_2.company_id = self.other_company
+
+        reviews = self.test_record_2.with_user(
+            self.test_user_3_multi_company.id
+        ).request_validation()
+        self.test_record_2.invalidate_recordset()
+
+        self.assertEqual(len(reviews), 1)
+
+    def test_29_request_validation_same_company(self):
+        """
+        Test validation request behavior with multi-company setup.
+
+        Setup:
+        - Main company has 2 tier definitions:
+          - One for User1 (sequence 30)
+          - One for User3 (sequence 20)
+        - Other company has 1 tier definition:
+          - One for User3 (sequence 30)
+
+        When record's company is set to 'main company':
+        - Both User1 and User3's tier definitions from main company should be applied
+        - Should create 2 reviews
+        """
+        self.assertFalse(self.test_record_2.review_ids)
+        self.assertFalse(self.test_record_2.company_id)
+        self.assertEqual(self.test_user_3_multi_company.env.company, self.main_company)
+
+        self.test_record_2.company_id = self.main_company
+
+        reviews = self.test_record_2.with_user(
+            self.test_user_3_multi_company.id
+        ).request_validation()
+        self.test_record_2.invalidate_recordset()
+
+        self.assertEqual(len(reviews), 2)
+
+    def test_30_request_validation(self):
+        # Create new test record
+        test_record = self.test_model.create({"test_field": 2.5})
+        # Create tier definitions for both tester models
+        self.tier_definition.write(
+            {
+                "approve_sequence": True,
+                "notify_on_create": True,
+            }
+        )
+        def_2 = self.tier_def_obj.create(
+            {
+                "model_id": self.tester_model.id,
+                "review_type": "individual",
+                "reviewer_id": self.test_user_2.id,
+                "sequence": 20,
+                "approve_sequence": True,
+                "notify_on_create": False,
+                "notify_on_accepted": True,
+            }
+        )
+        def_3 = self.tier_def_obj.create(
+            {
+                "model_id": self.tester_model.id,
+                "review_type": "individual",
+                "reviewer_id": self.test_user_3_multi_company.id,
+                "sequence": 10,
+                "approve_sequence": True,
+                "notify_on_create": False,
+                "notify_on_accepted": True,
+            }
+        )
+        mt_tier_validation_requested = self.env.ref(
+            "base_tier_validation.mt_tier_validation_requested"
+        )
+        mt_tier_validation_accepted = self.env.ref(
+            "base_tier_validation.mt_tier_validation_accepted"
+        )
+        test_record.request_validation()
+        review_1 = test_record.review_ids.filtered(
+            lambda x: x.definition_id == self.tier_definition
+        )
+        self.assertEqual(review_1.status, "pending")
+        review_2 = test_record.review_ids.filtered(lambda x: x.definition_id == def_2)
+        self.assertEqual(review_2.status, "pending")
+        review_3 = test_record.review_ids.filtered(lambda x: x.definition_id == def_3)
+        self.assertEqual(review_3.status, "pending")
+        followers = test_record.message_follower_ids
+        self.assertIn(self.test_user_1.partner_id, followers.mapped("partner_id"))
+        follower_1 = followers.filtered(
+            lambda x: x.partner_id == self.test_user_1.partner_id
+        )
+        self.assertIn(mt_tier_validation_requested, follower_1.subtype_ids)
+        self.assertNotIn(mt_tier_validation_accepted, follower_1.subtype_ids)
+        self.assertNotIn(self.test_user_2.partner_id, followers.mapped("partner_id"))
+        self.assertNotIn(
+            self.test_user_3_multi_company.partner_id, followers.mapped("partner_id")
+        )
+        old_messages = test_record.message_ids
+        test_record.with_user(self.test_user_1).validate_tier()
+        new_messages = test_record.message_ids - old_messages
+        self.assertEqual(len(new_messages), 1)
+        self.assertEqual(new_messages.subtype_id, mt_tier_validation_accepted)
+        self.assertEqual(self.test_user_2.partner_id, new_messages.notified_partner_ids)
+        self.assertEqual(review_1.status, "approved")
+        self.assertEqual(review_2.status, "pending")
+        self.assertEqual(review_3.status, "pending")
+        followers = test_record.message_follower_ids
+        self.assertIn(self.test_user_1.partner_id, followers.mapped("partner_id"))
+        self.assertIn(self.test_user_2.partner_id, followers.mapped("partner_id"))
+        follower_2 = followers.filtered(
+            lambda x: x.partner_id == self.test_user_2.partner_id
+        )
+        self.assertNotIn(mt_tier_validation_requested, follower_2.subtype_ids)
+        self.assertIn(mt_tier_validation_accepted, follower_2.subtype_ids)
+        self.assertNotIn(
+            self.test_user_3_multi_company.partner_id, followers.mapped("partner_id")
+        )
+        old_messages = test_record.message_ids
+        test_record.with_user(self.test_user_2).validate_tier()
+        new_messages = test_record.message_ids - old_messages
+        self.assertEqual(len(new_messages), 1)
+        self.assertEqual(new_messages.subtype_id, mt_tier_validation_accepted)
+        self.assertEqual(
+            self.test_user_3_multi_company.partner_id, new_messages.notified_partner_ids
+        )
+        self.assertEqual(review_1.status, "approved")
+        self.assertEqual(review_2.status, "approved")
+        self.assertEqual(review_3.status, "pending")
+        followers = test_record.message_follower_ids
+        self.assertIn(self.test_user_1.partner_id, followers.mapped("partner_id"))
+        self.assertIn(self.test_user_2.partner_id, followers.mapped("partner_id"))
+        self.assertIn(
+            self.test_user_3_multi_company.partner_id, followers.mapped("partner_id")
+        )
+        follower_3 = followers.filtered(
+            lambda x: x.partner_id == self.test_user_3_multi_company.partner_id
+        )
+        self.assertNotIn(mt_tier_validation_requested, follower_3.subtype_ids)
+        self.assertIn(mt_tier_validation_accepted, follower_3.subtype_ids)
+        old_messages = test_record.message_ids
+        test_record.with_user(self.test_user_3_multi_company).validate_tier()
+        new_messages = test_record.message_ids - old_messages
+        self.assertEqual(len(new_messages), 0)
+
+    def test_31_request_validation(self):
+        # Create new test record
+        test_record = self.test_model.create({"test_field": 2.5})
+        # Create tier definitions for both tester models
+        self.tier_definition.write(
+            {
+                "approve_sequence": True,
+                "notify_on_create": True,
+            }
+        )
+        def_2 = self.tier_def_obj.create(
+            {
+                "model_id": self.tester_model.id,
+                "review_type": "individual",
+                "reviewer_id": self.test_user_2.id,
+                "sequence": 20,
+                "approve_sequence": True,
+                "notify_on_create": True,
+                "notify_on_accepted": True,
+            }
+        )
+        def_3 = self.tier_def_obj.create(
+            {
+                "model_id": self.tester_model.id,
+                "review_type": "individual",
+                "reviewer_id": self.test_user_3_multi_company.id,
+                "sequence": 10,
+                "approve_sequence": True,
+                "notify_on_create": True,
+                "notify_on_accepted": True,
+            }
+        )
+        test_record.request_validation()
+        review_1 = test_record.review_ids.filtered(
+            lambda x: x.definition_id == self.tier_definition
+        )
+        self.assertEqual(review_1.status, "pending")
+        review_2 = test_record.review_ids.filtered(lambda x: x.definition_id == def_2)
+        self.assertEqual(review_2.status, "pending")
+        review_3 = test_record.review_ids.filtered(lambda x: x.definition_id == def_3)
+        self.assertEqual(review_3.status, "pending")
+        followers = test_record.message_follower_ids
+        self.assertIn(self.test_user_1.partner_id, followers.mapped("partner_id"))
+        self.assertIn(self.test_user_2.partner_id, followers.mapped("partner_id"))
+        self.assertIn(
+            self.test_user_3_multi_company.partner_id, followers.mapped("partner_id")
+        )
 
 
 @tagged("at_install")
