@@ -352,8 +352,6 @@ class TierValidation(models.AbstractModel):
         for val in vals:
             if val not in exceptions:
                 not_allowed_fields.append(val)
-        if not not_allowed_fields:
-            return []
 
         not_allowed_field_names, allowed_field_names = [], []
         for fld_name, fld_data in self.fields_get(
@@ -692,6 +690,13 @@ class TierValidation(models.AbstractModel):
         )
         # We need to notify all pending users if there is approve sequence
         if tier_reviews and any(review.approve_sequence for review in tier_reviews):
+            # If there are waiting reviews that should be approved sequentially,
+            # they must be marked as canceled
+            waiting_reviews = self.review_ids.filtered(
+                lambda r: r.status == "waiting" and r.approve_sequence
+            )
+            if waiting_reviews:
+                waiting_reviews.write({"status": "cancel"})
             reviews_to_notify = self.review_ids.filtered(
                 lambda r: r.status == "pending" and r.definition_id.notify_on_rejected
             )
@@ -875,7 +880,7 @@ class TierValidation(models.AbstractModel):
         return new_node
 
     def _get_tier_validation_readonly_domain(self):
-        return "bool(review_ids)"
+        return "validation_status not in ('no', False)"
 
     @api.model
     def get_view(self, view_id=None, view_type="form", **options):
