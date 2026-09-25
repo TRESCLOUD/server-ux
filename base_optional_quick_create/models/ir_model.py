@@ -104,6 +104,8 @@ class IrModel(models.Model):
         res = super().write(vals)
         self._patch_quick_create()
         if "avoid_quick_create" in vals:
-            self.pool.registry_invalidated = True
-            self.pool.signal_changes()
+            # v20 movió el aviso de cambio de registro: `pool.registry_invalidated` y
+            # `pool.signal_changes()` ya no existen. El señalado lo hace la transacción
+            # sola justo antes del commit, condicionado a esta marca.
+            self.env.transaction.will_change_registry()
         return res

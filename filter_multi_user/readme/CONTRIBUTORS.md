@@ -1,3 +1,0 @@
-- Lois Rilo \<lois.rilo@forgeflow.com\>
-- Dhara Solanki \<dhara.solanki@initos.com\>
-- Samir GUESMI \<samir.guesmi@acsone.eu\>
